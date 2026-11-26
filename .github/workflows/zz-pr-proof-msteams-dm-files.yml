@@ -1,0 +1,66 @@
+# One-off proof run for openclaw/openclaw#206023 on the contributor's fork (not part of the PR).
+# Runs OpenClaw's own contributor gates (docs/ci/local-proof.md) on the exact PR tree.
+name: PR proof - msteams personal-chat file recovery
+on:
+  push:
+    branches: [pr-proof/msteams-dm-files]
+permissions:
+  contents: read
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+      - name: Use the exact PR tree (drop this workflow commit) and the PR's base as origin/main
+        run: |
+          git reset --hard HEAD~1
+          git update-ref refs/remotes/origin/main 96adcab55082e65de41016a3696e367fa3548c8e
+          git log --oneline -6
+          git diff --stat origin/main...HEAD
+      - name: Tools the repo's guards call (ripgrep)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep && rg --version | head -1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - run: corepack enable && pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: changed lanes (what CI selects)
+        run: pnpm changed:lanes
+      - name: check:changed (format, typecheck, lint, guards for the changed lanes)
+        if: always()
+        run: pnpm check:changed
+      - name: dead export scan on the unmodified base (shows inherited findings)
+        if: always()
+        run: |
+          git stash -u -q || true
+          git checkout -q 96adcab55082e65de41016a3696e367fa3548c8e
+          pnpm deadcode:exports || echo "BASE DEAD-EXPORT SCAN FAILED (inherited from main)"
+          git checkout -q -
+      - name: Regression tests fail on the base source (red)
+        if: always()
+        run: |
+          git checkout origin/main -- extensions/msteams/src/monitor-handler/inbound-content.ts extensions/msteams/src/sdk-types.ts
+          if pnpm test extensions/msteams/src/monitor-handler/inbound-content.test.ts --maxWorkers=1; then echo "UNEXPECTED: new tests passed on base source"; exit 1; else echo "EXPECTED: new tests fail on base source"; fi
+          git checkout HEAD -- extensions/msteams/src/monitor-handler/inbound-content.ts extensions/msteams/src/sdk-types.ts
+          git status --short
+      - name: Regression tests pass on the PR source (green)
+        if: always()
+        run: pnpm test extensions/msteams/src/monitor-handler/inbound-content.test.ts --maxWorkers=1
+      - name: test:changed (changed Vitest targets)
+        if: always()
+        run: pnpm test:changed
+      - name: msteams extension lane
+        if: always()
+        run: pnpm test:extension msteams
+      - name: config generators (channel metadata, config docs, plugin inventory)
+        if: always()
+        run: pnpm config:channels:check && pnpm config:docs:check && pnpm plugins:inventory:check
+      - name: docs checks
+        if: always()
+        run: pnpm check:docs
+      - name: test-line budget
+        if: always()
+        run: node scripts/check-test-lines-ratchet.mts --base origin/main --no-merge-base
