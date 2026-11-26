@@ -1,0 +1,38 @@
+# One-off run on the contributor's fork (not part of openclaw/openclaw#206023): check:changed on the exact PR tree
+# with only its dead-export scan skipped, then that scan on the PR tree and on the PR's base, side by side.
+name: PR proof - check:changed and the inherited dead export
+on:
+  push:
+    branches: [pr-proof/msteams-dm-files-3]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+      - name: Use the exact PR tree (drop this workflow commit) and the PR's base as origin/main
+        run: |
+          git reset --hard HEAD~1
+          git update-ref refs/remotes/origin/main 96adcab55082e65de41016a3696e367fa3548c8e
+          git log --oneline -6
+      - name: Tools the repo's guards call (ripgrep)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - run: corepack enable && pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: check:changed without the dead-export scan
+        run: OPENCLAW_CHECK_CHANGED_SKIP_DEADCODE=1 pnpm check:changed
+      - name: dead-export scan on the PR tree
+        if: always()
+        run: pnpm deadcode:exports || echo "PR TREE DEAD-EXPORT SCAN FAILED"
+      - name: dead-export scan on the PR's base
+        if: always()
+        run: |
+          git checkout -q 96adcab55082e65de41016a3696e367fa3548c8e
+          pnpm deadcode:exports || echo "BASE DEAD-EXPORT SCAN FAILED"
