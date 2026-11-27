@@ -2,6 +2,7 @@
 # runs the repo's own generators on the PR tree and uploads what they change.
 name: PR proof - regenerate config outputs
 on:
+  workflow_dispatch:
   push:
     branches: [pr-proof/msteams-dm-files-gen2]
 permissions:
@@ -15,7 +16,7 @@ jobs:
         with:
           fetch-depth: 5
       - name: Use the exact PR tree (drop this workflow commit)
-        run: git reset --hard HEAD~1 && git log --oneline -3
+        run: git reset --hard HEAD~3 && git log --oneline -3
       - uses: actions/setup-node@v4
         with:
           node-version: 24.22.3
