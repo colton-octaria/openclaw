@@ -1,0 +1,39 @@
+# One-off run on the contributor's fork (not part of openclaw/openclaw#206023):
+# runs the repo's own generators on the PR tree and uploads what they change.
+name: PR proof - regenerate config outputs
+on:
+  push:
+    branches: [pr-proof/msteams-dm-files-gen2]
+permissions:
+  contents: read
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 5
+      - name: Use the exact PR tree (drop this workflow commit)
+        run: git reset --hard HEAD~1 && git log --oneline -3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.22.3
+      - run: corepack enable && pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: Run the generators
+        run: pnpm config:channels:gen && pnpm config:docs:gen
+      - name: What they changed
+        run: |
+          git status --porcelain
+          git diff --stat
+          git diff --binary > regen.patch
+          git status --porcelain > regen.status
+      - name: Generators now pass their own checks
+        run: pnpm config:channels:check && pnpm config:docs:check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: regen
+          path: |
+            regen.patch
+            regen.status
